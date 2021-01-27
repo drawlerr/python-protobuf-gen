@@ -1,6 +1,6 @@
-import typing
-from enum import Enum
-from typing import Any, Type, TypeVar
+import inspect
+from enum import EnumMeta
+from typing import Any, Type, TypeVar, _GenericAlias
 
 import grpc
 
@@ -43,24 +43,24 @@ class Message:
             for n, t in zip(self.__slots__, self.get_slot_types()):
                 val = getattr(self, n)
 
-                if issubclass(t, ATOMS):
+                if t in ATOMS:
                     setattr(inst, n, val)
-                elif issubclass(t, Message):
+                elif inspect.isclass(t) and issubclass(t, Message):
                     if val is not None:
                         val.to_pb(getattr(inst, n))
-                elif issubclass(t, Enum):
+                elif (inspect.isclass(t) and issubclass(t, EnumMeta)) or issubclass(type(t), EnumMeta):
                     setattr(inst, n, val.value)
-                elif issubclass(t, typing.List):
+                elif isinstance(t, _GenericAlias) and t._name == 'List':
                     st = t.__args__[0]
 
                     val_inst = getattr(inst, n)
                     for i, x in enumerate(val):
-                        if issubclass(st, ATOMS):
+                        if st in ATOMS:
                             val_inst.append(x)
-                        elif issubclass(st, Message):
+                        elif inspect.isclass(st) and issubclass(st, Message):
                             added = val_inst.add()
                             x.to_pb(added)
-                        elif issubclass(st, Enum):
+                        elif (inspect.isclass(st) and issubclass(st, EnumMeta)) or issubclass(type(st), EnumMeta):
                             val_inst.append(x.value)
                         else:
                             assert False, (t, st, val)
@@ -83,17 +83,17 @@ class Message:
         return []
 
     @classmethod
-    def _from_pb_type(cls, type, val):
-        if issubclass(type, ATOMS):
+    def _from_pb_type(cls, t, val):
+        if t in ATOMS:
             return val
-        elif issubclass(type, Message):
-            return type.from_pb(val)
-        elif issubclass(type, Enum):
-            return type(val)
-        elif issubclass(type, typing.List):
-            return [cls._from_pb_type(type.__args__[0], x) for x in val]
+        elif inspect.isclass(t) and issubclass(t, Message):
+            return t.from_pb(val)
+        elif (inspect.isclass(t) and issubclass(t, EnumMeta)) or issubclass(type(t), EnumMeta):
+            return t(val)
+        elif isinstance(t, _GenericAlias) and t._name == 'List':
+            return [cls._from_pb_type(t.__args__[0], x) for x in val]
         else:
-            assert False, (type, val)
+            assert False, (t, val)
 
     @classmethod
     def from_pb(cls, inst):
